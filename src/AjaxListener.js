@@ -39,6 +39,13 @@ function parse_url_params(params)
         return o;
     }, {});
 }
+function extract_form_data(fd)
+{
+    return Array.from(fd.keys()).reduce(function(o, k) {
+       o[k] = fd.getAll(k);
+       return o;
+    }, {});
+}
 function parse_headers(headers)
 {
     return String(headers).trim().split(NL).reduce(function(o, line) {
@@ -46,12 +53,23 @@ function parse_headers(headers)
         if (line.length)
         {
             var parts = line.split(': '), header = parts.shift(), value = parts.join(': ');
-            o[header] = value;
+            o[header.toLowerCase()] = value;
         }
         return o;
     }, {});
 }
+function extract_headers(headers)
+{
+    return Array.from(headers.keys()).reduce(function(o, k) {
+        o[k.toLowerCase()] = headers.get(k);
+        return o;
+    }, {});
+}
 
+function factory(f, x)
+{
+    return 'function' === typeof f ? function() {return f(x);} : function() {return x;};
+}
 function notify(req, res)
 {
     setTimeout(function() {
@@ -126,35 +144,38 @@ Request.prototype = {
         }
     },
 
-    setHeaders: function(headers) {
-        this._headers = headers;
+    setHeaders: function(headersFactory) {
+        this._headers = headersFactory;
         return this;
     },
-    getHeaders: function(raw) {
-        var headers = this._headers;
-        if (true === raw) return headers;
-        if (headers)
-        {
-            return headers.keys && header.get ? Array.from(headers.keys()).reduce(function(o, k) {
-                o[k] = headers.get(k);
-                return o;
-            }, {}) : (headers.substring ? parse_headers(headers) : headers);
-        }
+    getHeaders: function() {
+        var headersFactory = this._headers;
+        if (headersFactory) return headersFactory();
     },
 
     setBody: function(body) {
         this._body = body;
         return this;
     },
-    getBody: function(format) {
+    getBody: function(raw) {
         var body = this._body;
-        if (true === format) return body;
+        if (true === raw) return body;
         if (body)
         {
-            return window.FormData && (body instanceof window.FormData) ? Array.from(body.keys()).reduce(function(o, k) {
-               o[k] = body.getAll(k);
-               return o;
-            }, {}) : ('json' === format ? JSON.parse(body) : ('urlenc' === format ? parse_url_params(body) : body));
+            if (window.FormData && (body instanceof window.FormData))
+            {
+                return extract_form_data(body);
+            }
+            var contentType = String(this.getHeaders()['content-type'] || '');
+            if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
+            {
+                return parse_url_params(body);
+            }
+            if (-1 !== contentType.indexOf('application/json') || -1 !== contentType.indexOf('application/vnd.api+json'))
+            {
+                return JSON.parse(body);
+            }
+            return body;
         }
     }
 };
@@ -187,28 +208,31 @@ Response.prototype = {
         return this._status;
     },
 
-    setHeaders: function(headers) {
-        this._headers = headers;
+    setHeaders: function(headersFactory) {
+        this._headers = headersFactory;
         return this;
     },
-    getHeaders: function(raw) {
-        var headers = this._headers;
-        if (true === raw) return headers;
-        if (headers)
-        {
-            return headers.keys && header.get ? Array.from(headers.keys()).reduce(function(o, k) {
-                o[k] = headers.get(k);
-                return o;
-            }, {}) : (headers.substring ? parse_headers(headers) : headers);
-        }
+    getHeaders: function() {
+        var headersFactory = this._headers;
+        if (headersFactory) return headersFactory();
     },
 
     setBody: function(body) {
         this._body = body;
         return this;
     },
-    getBody: function() {
-        return this._body;
+    getBody: function(raw) {
+        var body = this._body;
+        if (true === raw) return body;
+        if (body)
+        {
+            var contentType = String(this.getHeaders()['content-type'] || '');
+            if (-1 !== contentType.indexOf('application/json') || -1 !== contentType.indexOf('application/vnd.api+json'))
+            {
+                return JSON.parse(body);
+            }
+            return body;
+        }
     }
 };
 AjaxListener.Response = Response;
@@ -223,7 +247,7 @@ function listenerFetch(url)
             response.text().then(function(responseText) {
                 res
                     .setStatus(response.status)
-                    .setHeaders(response.headers)
+                    .setHeaders(factory(extract_headers, response.headers))
                     .setBody(responseText)
                 ;
                 if (url instanceof window.Request)
@@ -231,10 +255,10 @@ function listenerFetch(url)
                     req
                         .setMethod(url.method)
                         .setUrl(url.url)
-                        .setHeaders(url.headers)
+                        .setHeaders(factory(extract_headers, url.headers))
                     ;
                     url.text().then(function(reqBody) {
-                        req.setBody(reqBody)
+                        req.setBody(reqBody || '')
                         notify(req, res);
                     });
                 }
@@ -243,6 +267,8 @@ function listenerFetch(url)
                     req
                         .setMethod('GET')
                         .setUrl(url)
+                        .setHeaders(factory(null, {}))
+                        .setBody('')
                     ;
                     notify(req, res);
                 }
@@ -259,13 +285,13 @@ function listenerOpen(method, url)
         xhrSend = xhr.prototype.send,
         xhrSetRequestHeader = xhr.prototype.setRequestHeader;
 
-    self.send = function(payload) {
-        if (arguments.length < 1) payload = null;
-        body = payload;
+    self.send = function() {
+        if (arguments.length) body = arguments[0];
         xhrSend.apply(self, arguments);
     };
     self.setRequestHeader = function(header, value) {
-        headers[header] = HAS.call(headers, header) ? (headers[header]+', '+String(value)) : String(value);
+        var h = String(header).toLowerCase();
+        headers[h] = HAS.call(headers, h) ? (headers[h]+', '+String(value)) : String(value);
         xhrSetRequestHeader.apply(self, arguments);
     };
 
@@ -280,12 +306,12 @@ function listenerOpen(method, url)
             req
                 .setMethod(method)
                 .setUrl(url)
-                .setHeaders(headers)
-                .setBody(body)
+                .setHeaders(factory(null, headers))
+                .setBody(null == body ? '' : body)
             ;
             res
                 .setStatus(self.status)
-                .setHeaders(self.getAllResponseHeaders())
+                .setHeaders(factory(parse_headers, self.getAllResponseHeaders()))
                 .setBody(self.responseText)
             ;
             notify(req, res);

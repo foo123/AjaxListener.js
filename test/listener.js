@@ -1,12 +1,5 @@
-# AjaxListener.js
-
-Listen to any AJAX event on page with JavaScript, even by other scripts
-
-Version: 1.0.0 (5 kB minified)
-
-**Example:**
-
-```javascript
+(function(){
+// this is a script that listens to any AJAX event
 function mylistener(req, res)
 {
     console.log('REQUEST', 'Method', req.getMethod(), 'Url', req.getUrl(), 'Headers', req.getHeaders(), 'Body', req.getBody());
@@ -14,8 +7,6 @@ function mylistener(req, res)
 }
 
 AjaxListener.install().onRequest(mylistener);
-
 //AjaxListener.onRequest(mylistener, false); // unlisten
-
 //AjaxListener.uninstall(); // uninstall
-```
+})();
