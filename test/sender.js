@@ -2,18 +2,19 @@
 // this is an independent script
 function requestText()
 {
-    var xhr = new XMLHttpRequest();
+    var xhr = new XMLHttpRequest()/*, fd = new FormData()*/;
     xhr.open('GET', './text.txt');
     xhr.setRequestHeader('X-My-Header', 'foo/bar');
     xhr.onload = function() {
         alert('LOADED TEXT: '+ xhr.responseText);
     };
-    xhr.send();
+    //fd.set('foo', 'bar');
+    xhr.send(/*fd*/);
 }
 function requestJson()
 {
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', './json.json?loo=lam');
+    xhr.open('POST', './json.json?loo=lam&koo[ma][koo]=zoo');
     xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
     xhr.onload = function() {
         alert('LOADED JSON: '+ xhr.responseText);

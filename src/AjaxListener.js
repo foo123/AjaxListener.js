@@ -14,37 +14,62 @@ if ('function' === typeof define && define.amd) define(function(req) {return roo
 
 var AjaxListener = {VERSION: '1.0.0'},
     callbacks = [], installed = false,
-    HAS = Object.prototype.hasOwnProperty, NL = /[\r\n]+/,
-    fetch = window.fetch, xhr = window.XMLHttpRequest, xhrOpen
+    HAS = Object.prototype.hasOwnProperty,
+    NL = /[\r\n]+/, NESTED = /^[^\[\]\.]+(\[[^\[\]\.]+\])+$/, BRAKET = /\[([^\[\]]+)\]/g,
+    fetch = window.fetch,
+    xhr = window.XMLHttpRequest, xhrOpen
 ;
 
-function parse_url_params(params)
+function is_formdata(x)
+{
+    return window.FormData && (x instanceof window.FormData);
+}
+function decode_key(key)
+{
+    return NESTED.test(key) ? key.trim().replace(BRAKET, ".$1").split('.').map(function(k) {return decodeURIComponent(k.trim());}) : [decodeURIComponent(key)];
+}
+function insert_key(o, key, val)
+{
+    for (var k, i=0, l=key.length; i<l; ++i)
+    {
+        k = key[i];
+        if (i+1 < l)
+        {
+            if (!HAS.call(o, k)) o[k] = {};
+            o = o[k];
+        }
+        else if (HAS.call(o, k))
+        {
+            if (o[k].push) o[k].push(val);
+            else o[k] = [o[k], val];
+        }
+        else
+        {
+            o[k] = val;
+        }
+    }
+}
+function parse_url_params(params, obj)
 {
     return String(params).trim().split('&').reduce(function(o, kv){
         kv = kv.split('=');
-        var key = kv[0].length ? decodeURIComponent(kv[0]) : null,
-            val = kv[1] && kv[1].length ? decodeURIComponent(kv[1]) : true;
-        if (key)
-        {
-            if (HAS.call(o, key))
-            {
-                if (o[key].push) o[key].push(val);
-                else o[key] = [o[key], val];
-            }
-            else
-            {
-                o[key] = val;
-            }
-        }
+        var key = kv[0].length ? decode_key(kv[0]) : null;
+        if (key && key.length)
+            insert_key(o, key, kv[1] ? (kv[1].length ? decodeURIComponent(kv[1]) : '') : true);
         return o;
-    }, {});
+    }, obj || {});
 }
-function extract_form_data(fd)
+function parse_json(jsonStr)
+{
+    return JSON.parse(jsonStr);
+}
+function extract_form_data(fd, obj)
 {
     return Array.from(fd.keys()).reduce(function(o, k) {
-       o[k] = fd.getAll(k);
+       var v = fd.getAll(k);
+       o[k] = 1 === v.length ? v[0] : v;
        return o;
-    }, {});
+    }, obj || {});
 }
 function parse_headers(headers)
 {
@@ -112,9 +137,9 @@ Request.prototype = {
         return this;
     },
     getUrl: function(raw) {
-        var url = this._url, parts;
+        var url = this._url, parts, body, ret;
         if (true === raw) return url;
-        if (url)
+        if (null != url)
         {
             parts = url.split('?');
             if (parts[1])
@@ -122,11 +147,11 @@ Request.prototype = {
                 parts[1] = parts[1].split('#');
                 if (parts[1][1])
                 {
-                    return {url:parts[0], search:parse_url_params(parts[1][0]), hash:parts[1][1]};
+                    ret = {url:parts[0], query:parse_url_params(parts[1][0]), hash:parts[1][1]};
                 }
                 else
                 {
-                    return {url:parts[0], search:parse_url_params(parts[1][0]), hash:null};
+                    ret = {url:parts[0], query:parse_url_params(parts[1][0]), hash:null};
                 }
             }
             else
@@ -134,14 +159,22 @@ Request.prototype = {
                 parts[0] = parts[0].split('#');
                 if (parts[0][1])
                 {
-                    return {url:parts[0][0], search:null, hash:parts[0][1]};
+                    ret = {url:parts[0][0], query:null, hash:parts[0][1]};
                 }
                 else
                 {
-                    return {url:url, search:null, hash:null};
+                    ret = {url:url, query:null, hash:null};
                 }
             }
+            /*
+            // NOT ADDED AS QUERY PARAMS!!
+            if (('GET' === this.getMethod()) && is_formdata(body = this.getBody(true)))
+            {
+                ret.query = extract_form_data(body, ret.query);
+            }*/
+            return ret;
         }
+        return url;
     },
 
     setHeaders: function(headersFactory) {
@@ -158,25 +191,28 @@ Request.prototype = {
         return this;
     },
     getBody: function(raw) {
-        var body = this._body;
+        var body = this._body, contentType;
         if (true === raw) return body;
-        if (body)
+        if (null != body)
         {
-            if (window.FormData && (body instanceof window.FormData))
+            if (is_formdata(body))
             {
                 return extract_form_data(body);
             }
-            var contentType = String(this.getHeaders()['content-type'] || '');
+            contentType = String(this.getHeaders()['content-type'] || '');
             if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
             {
                 return parse_url_params(body);
             }
-            if (-1 !== contentType.indexOf('application/json') || -1 !== contentType.indexOf('application/vnd.api+json'))
+            if (
+                -1 !== contentType.indexOf('application/json')
+                || -1 !== contentType.indexOf('application/vnd.api+json')
+            )
             {
-                return JSON.parse(body);
+                return parse_json(body);
             }
-            return body;
         }
+        return body;
     }
 };
 AjaxListener.Request = Request;
@@ -222,17 +258,20 @@ Response.prototype = {
         return this;
     },
     getBody: function(raw) {
-        var body = this._body;
+        var body = this._body, contentType;
         if (true === raw) return body;
-        if (body)
+        if (null != body)
         {
-            var contentType = String(this.getHeaders()['content-type'] || '');
-            if (-1 !== contentType.indexOf('application/json') || -1 !== contentType.indexOf('application/vnd.api+json'))
+            contentType = String(this.getHeaders()['content-type'] || '');
+            if (
+                -1 !== contentType.indexOf('application/json')
+                || -1 !== contentType.indexOf('application/vnd.api+json')
+            )
             {
-                return JSON.parse(body);
+                return parse_json(body);
             }
-            return body;
         }
+        return body;
     }
 };
 AjaxListener.Response = Response;
@@ -282,8 +321,8 @@ listenerFetch.ajaxListener = AjaxListener;
 function listenerOpen(method, url)
 {
     var self = this, body = null, headers = {},
-        xhrSend = xhr.prototype.send,
-        xhrSetRequestHeader = xhr.prototype.setRequestHeader;
+        xhrSend = self.send,
+        xhrSetRequestHeader = self.setRequestHeader;
 
     self.send = function() {
         if (arguments.length) body = arguments[0];
