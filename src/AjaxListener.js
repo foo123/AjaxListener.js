@@ -20,7 +20,8 @@ var AjaxListener = {VERSION: '1.0.0'},
     BRAKET = /\[([^\[\]]+)\]/g,
     NATIVE_CODE = /^\s*function\s*[A-Za-z0-9_$]+\s*\([^\(\)]*\)\s*\{\s*\[native code\]\s*\}\s*$/i,
     fetch = window.fetch,
-    xhr = window.XMLHttpRequest, xhrOpen
+    xhr = window.XMLHttpRequest,
+    xhrOpen, xhrSend, xhrSetRequestHeader
 ;
 
 function get_base_url()
@@ -300,9 +301,7 @@ listenerFetch.ajaxListener = AjaxListener;
 
 function listenerOpen(method, url)
 {
-    var self = this, body = null, headers = {},
-        xhrSend = self.send,
-        xhrSetRequestHeader = self.setRequestHeader;
+    var self = this, body = null, headers = {};
 
     self.send = function() {
         if (arguments.length) body = arguments[0];
@@ -355,6 +354,8 @@ AjaxListener.install = function() {
             if (is_native_function(xhr.prototype.open))
             {
                 xhrOpen = xhr.prototype.open;
+                xhrSend = xhr.prototype.send;
+                xhrSetRequestHeader = xhr.prototype.setRequestHeader;
                 xhr.prototype.open = listenerOpen;
                 installed = true;
             }
@@ -373,6 +374,8 @@ AjaxListener.uninstall = function() {
         if (is_native_function(fetch)) window.fetch = fetch;
         if (is_native_function(xhrOpen)) xhr.prototype.open = xhrOpen;
         xhrOpen = null;
+        xhrSend = null;
+        xhrSetRequestHeader = null;
         installed = false;
     }
     return AjaxListener;
