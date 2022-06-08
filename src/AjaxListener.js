@@ -14,19 +14,30 @@ if ('function' === typeof define && define.amd) define(function(req) {return roo
 
 var AjaxListener = {VERSION: '1.0.0'},
     callbacks = [], installed = false,
-    HAS = Object.prototype.hasOwnProperty,
-    NL = /[\r\n]+/, NESTED = /^[^\[\]\.]+(\[[^\[\]\.]+\])+$/, BRAKET = /\[([^\[\]]+)\]/g,
+    HAS = Object.prototype.hasOwnProperty, FtoString = Function.prototype.toString,
+    NL = /[\r\n]+/,
+    NESTED = /^[^\[\]\.]+(\[[^\[\]\.]+\])+(\[\])?$/,
+    BRAKET = /\[([^\[\]]+)\]/g,
+    NATIVE_CODE = /^\s*function\s*[A-Za-z0-9_$]+\s*\([^\(\)]*\)\s*\{\s*\[native code\]\s*\}\s*$/i,
     fetch = window.fetch,
     xhr = window.XMLHttpRequest, xhrOpen
 ;
 
+function get_base_url()
+{
+    return window.location.origin + window.location.pathname/*.split('/').slice(0, -1).join('/')*/;
+}
+function is_native_function(f)
+{
+    return ('function' === typeof f) && NATIVE_CODE.test(FtoString.call(f));
+}
 function is_formdata(x)
 {
     return window.FormData && (x instanceof window.FormData);
 }
 function decode_key(key)
 {
-    return NESTED.test(key) ? key.trim().replace(BRAKET, ".$1").split('.').map(function(k) {return decodeURIComponent(k.trim());}) : [decodeURIComponent(key)];
+    return NESTED.test(key) ? key.replace(BRAKET, ".$1").split('.').map(function(k) {return decodeURIComponent(k);}) : [decodeURIComponent(key)];
 }
 function insert_key(o, key, val)
 {
@@ -38,14 +49,18 @@ function insert_key(o, key, val)
             if (!HAS.call(o, k)) o[k] = {};
             o = o[k];
         }
-        else if (HAS.call(o, k))
-        {
-            if (o[k].push) o[k].push(val);
-            else o[k] = [o[k], val];
-        }
         else
         {
-            o[k] = val;
+            if ('[]' === k.slice(-2)) k = k.slice(0, -2);
+            if (HAS.call(o, k))
+            {
+                if (o[k].push) o[k].push(val);
+                else o[k] = [o[k], val];
+            }
+            else
+            {
+                o[k] = val;
+            }
         }
     }
 }
@@ -103,176 +118,155 @@ function notify(req, res)
     }, 0);
 }
 
-function Request(type)
+function Request(api, method, _url, _headersFactory, _body)
 {
-    this.type = type;
-}
-Request.prototype = {
-    constructor: Request,
+    var self = this, url = null, headers = null, body = null;
+    method = String(method).toUpperCase();
 
-    type: '',
-    _method: 'GET',
-    _url: null,
-    _headers: null,
-    _body: null,
-
-    dispose: function() {
-        this._method = null;
-        this._url = null;
-        this._headers = null;
-        this._body = null;
-        return this;
-    },
-
-    setMethod: function(method) {
-        this._method = String(method).toUpperCase();
-        return this;
-    },
-    getMethod: function() {
-        return this._method;
-    },
-
-    setUrl: function(url) {
-        this._url = url;
-        return this;
-    },
-    getUrl: function(raw) {
-        var url = this._url, parts, body, ret;
-        if (true === raw) return url;
-        if (null != url)
+    self.dispose = function() {
+        _url = null;
+        _headersFactory = null;
+        _body = null;
+        method = null;
+        url = null;
+        headers = null;
+        body = null;
+        return self;
+    };
+    self.getAPI = function() {
+        return api;
+    };
+    self.getMethod = function() {
+        return method;
+    };
+    self.getURL = function(raw) {
+        if (true === raw) return _url;
+        if (null == url && null != _url)
         {
-            parts = url.split('?');
-            if (parts[1])
+            var u = new window.URL(_url, get_base_url());
+            url = {
+                href: u.href,
+                origin: u.origin,
+                hostname: u.hostname,
+                protocol: u.protocol,
+                host: u.host,
+                port: u.port,
+                path: u.pathname,
+                query: u.search,
+                hash: u.hash,
+                queryParams: u.search && u.search.length ? parse_url_params(u.search.slice(1)) : {}
+            };
+            /*
+            // NOT ADDED AS QUERY PARAMS!!
+            if (('GET' === self.getMethod()) && is_formdata(self.getBody(true)))
             {
-                parts[1] = parts[1].split('#');
-                if (parts[1][1])
-                {
-                    ret = {url:parts[0], query:parse_url_params(parts[1][0]), hash:parts[1][1]};
-                }
-                else
-                {
-                    ret = {url:parts[0], query:parse_url_params(parts[1][0]), hash:null};
-                }
+                url.queryParams = extract_form_data(self.getBody(true), url.queryParams);
+            }*/
+        }
+        return url;
+    };
+    self.getHeaders = function() {
+        if (null == headers && null != _headersFactory)
+        {
+            headers = _headersFactory();
+        }
+        return headers;
+    };
+    self.getBody = function(raw) {
+        if (true === raw) return _body;
+        if (null == body && null != _body)
+        {
+            if (is_formdata(_body))
+            {
+                return body = extract_form_data(_body);
+            }
+            var contentType = String(self.getHeaders()['content-type'] || '');
+            if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
+            {
+                body = parse_url_params(_body);
+            }
+            else if (
+                -1 !== contentType.indexOf('application/json')
+                || -1 !== contentType.indexOf('application/vnd.api+json')
+            )
+            {
+                body = parse_json(_body);
             }
             else
             {
-                parts[0] = parts[0].split('#');
-                if (parts[0][1])
-                {
-                    ret = {url:parts[0][0], query:null, hash:parts[0][1]};
-                }
-                else
-                {
-                    ret = {url:url, query:null, hash:null};
-                }
-            }
-            /*
-            // NOT ADDED AS QUERY PARAMS!!
-            if (('GET' === this.getMethod()) && is_formdata(body = this.getBody(true)))
-            {
-                ret.query = extract_form_data(body, ret.query);
-            }*/
-            return ret;
-        }
-        return url;
-    },
-
-    setHeaders: function(headersFactory) {
-        this._headers = headersFactory;
-        return this;
-    },
-    getHeaders: function() {
-        var headersFactory = this._headers;
-        if (headersFactory) return headersFactory();
-    },
-
-    setBody: function(body) {
-        this._body = body;
-        return this;
-    },
-    getBody: function(raw) {
-        var body = this._body, contentType;
-        if (true === raw) return body;
-        if (null != body)
-        {
-            if (is_formdata(body))
-            {
-                return extract_form_data(body);
-            }
-            contentType = String(this.getHeaders()['content-type'] || '');
-            if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
-            {
-                return parse_url_params(body);
-            }
-            if (
-                -1 !== contentType.indexOf('application/json')
-                || -1 !== contentType.indexOf('application/vnd.api+json')
-            )
-            {
-                return parse_json(body);
+                body = _body;
             }
         }
         return body;
-    }
+    };
+}
+Request.prototype = {
+    constructor: Request
+    ,dispose: null
+    ,getAPI: null
+    ,getMethod: null
+    ,getURL: null
+    ,getHeaders: null
+    ,getBody: null
 };
 AjaxListener.Request = Request;
 
-function Response(type)
+function Response(api, status, _headersFactory, _body)
 {
-    this.type = type;
-}
-Response.prototype = {
-    constructor: Response,
+    var self = this, headers = null, body = null;
 
-    type: '',
-    _status: 0,
-    _headers: null,
-    _body: null,
-
-    dispose: function() {
-        this._status = null;
-        this._headers = null;
-        this._body = null;
-        return this;
-    },
-
-    setStatus: function(status) {
-        this._status = status;
-        return this;
-    },
-    getStatus: function() {
-        return this._status;
-    },
-
-    setHeaders: function(headersFactory) {
-        this._headers = headersFactory;
-        return this;
-    },
-    getHeaders: function() {
-        var headersFactory = this._headers;
-        if (headersFactory) return headersFactory();
-    },
-
-    setBody: function(body) {
-        this._body = body;
-        return this;
-    },
-    getBody: function(raw) {
-        var body = this._body, contentType;
-        if (true === raw) return body;
-        if (null != body)
+    self.dispose = function() {
+        status = null;
+        _headersFactory = null;
+        _body = null;
+        headers = null;
+        body = null;
+        return self;
+    };
+    self.getAPI = function() {
+        return api;
+    };
+    self.getStatus = function() {
+        return status;
+    };
+    self.getHeaders = function() {
+        if (null == headers && null != _headersFactory)
         {
-            contentType = String(this.getHeaders()['content-type'] || '');
-            if (
+            headers = _headersFactory();
+        }
+        return headers;
+    };
+    self.getBody = function(raw) {
+        if (true === raw) return _body;
+        if (null == body && null != _body)
+        {
+            var contentType = String(self.getHeaders()['content-type'] || '');
+            if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
+            {
+                body = parse_url_params(_body);
+            }
+            else if (
                 -1 !== contentType.indexOf('application/json')
                 || -1 !== contentType.indexOf('application/vnd.api+json')
             )
             {
-                return parse_json(body);
+                body = parse_json(_body);
+            }
+            else
+            {
+                body = _body;
             }
         }
         return body;
-    }
+    };
+}
+Response.prototype = {
+    constructor: Response
+    ,dispose: null
+    ,getAPI: null
+    ,getStatus: null
+    ,getHeaders: null
+    ,getBody: null
 };
 AjaxListener.Response = Response;
 
@@ -282,33 +276,19 @@ function listenerFetch(url)
     return fetch.apply(fetch, arguments).then(function(response) {
         if (callbacks.length)
         {
-            var req = new Request('fetch'), res = new Response('fetch');
             response.text().then(function(responseText) {
-                res
-                    .setStatus(response.status)
-                    .setHeaders(factory(extract_headers, response.headers))
-                    .setBody(responseText)
-                ;
+                var req, res;
+                res = new Response('fetch', response.status, factory(extract_headers, response.headers), responseText);
                 if (url instanceof window.Request)
                 {
-                    req
-                        .setMethod(url.method)
-                        .setUrl(url.url)
-                        .setHeaders(factory(extract_headers, url.headers))
-                    ;
                     url.text().then(function(reqBody) {
-                        req.setBody(reqBody || '')
+                        req = new Request('fetch', url.method, url.url, factory(extract_headers, url.headers), reqBody || '');
                         notify(req, res);
                     });
                 }
                 else
                 {
-                    req
-                        .setMethod('GET')
-                        .setUrl(url)
-                        .setHeaders(factory(null, {}))
-                        .setBody('')
-                    ;
+                    req = new Request('fetch', 'GET', url, factory(null, {}), '');
                     notify(req, res);
                 }
             });
@@ -341,18 +321,8 @@ function listenerOpen(method, url)
         self.removeEventListener('load', onLoad);
         if (callbacks.length)
         {
-            var req = new Request('xhr'), res = new Response('xhr');
-            req
-                .setMethod(method)
-                .setUrl(url)
-                .setHeaders(factory(null, headers))
-                .setBody(null == body ? '' : body)
-            ;
-            res
-                .setStatus(self.status)
-                .setHeaders(factory(parse_headers, self.getAllResponseHeaders()))
-                .setBody(self.responseText)
-            ;
+            var req = new Request('xhr', method, url, factory(null, headers), null == body ? '' : body),
+                res = new Response('xhr', self.status, factory(parse_headers, self.getAllResponseHeaders()), self.responseText);
             notify(req, res);
         }
     });
@@ -363,7 +333,6 @@ listenerOpen.ajaxListener = AjaxListener;
 AjaxListener.install = function() {
     if (!installed)
     {
-        installed = true;
         if (fetch)
         {
             if (fetch.ajaxListener)
@@ -371,7 +340,11 @@ AjaxListener.install = function() {
                 fetch.ajaxListener.uninstall();
                 fetch = window.fetch;
             }
-            window.fetch = listenerFetch;
+            if (is_native_function(fetch))
+            {
+                window.fetch = listenerFetch;
+                installed = true;
+            }
         }
         if (xhr)
         {
@@ -379,8 +352,12 @@ AjaxListener.install = function() {
             {
                 xhr.prototype.open.ajaxListener.uninstall();
             }
-            xhrOpen = xhr.prototype.open;
-            xhr.prototype.open = listenerOpen;
+            if (is_native_function(xhr.prototype.open))
+            {
+                xhrOpen = xhr.prototype.open;
+                xhr.prototype.open = listenerOpen;
+                installed = true;
+            }
         }
     }
     return AjaxListener;
@@ -393,8 +370,8 @@ AjaxListener.isInstalled = function() {
 AjaxListener.uninstall = function() {
     if (installed)
     {
-        if (fetch) window.fetch = fetch;
-        if (xhr) xhr.prototype.open = xhrOpen;
+        if (is_native_function(fetch)) window.fetch = fetch;
+        if (is_native_function(xhrOpen)) xhr.prototype.open = xhrOpen;
         xhrOpen = null;
         installed = false;
     }
