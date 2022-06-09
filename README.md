@@ -4,6 +4,8 @@ Listen to any AJAX event on page with JavaScript, even by other scripts
 
 Version: **1.0.0** (5 kB minified)
 
+![AJAX Listener](/ajaxlistener.jpg)
+
 **Example:**
 
 ```javascript
