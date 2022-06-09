@@ -116,6 +116,7 @@ function notify(req, res)
     setTimeout(function() {
         for (var cb=callbacks.slice(), i=0, n=cb.length; i<n; ++i) cb[i](req, res);
         req.dispose(); res.dispose();
+        req = null; res = null;
     }, 0);
 }
 
@@ -272,27 +273,29 @@ Response.prototype = {
 AjaxListener.Response = Response;
 
 
-function listenerFetch(url)
+function listenerFetch(request)
 {
     return fetch.apply(fetch, arguments).then(function(response) {
-        if (callbacks.length)
+        if (/*response.ok &&*/ callbacks.length)
         {
             response.text().then(function(responseText) {
-                var req, res;
-                res = new Response('fetch', response.status, factory(extract_headers, response.headers), responseText);
-                if (url instanceof window.Request)
+                if (request instanceof window.Request)
                 {
-                    url.text().then(function(reqBody) {
-                        req = new Request('fetch', url.method, url.url, factory(extract_headers, url.headers), reqBody || '');
-                        notify(req, res);
+                    request.text().then(function(requestText) {
+                        notify(
+                        new Request('fetch', request.method, request.url, factory(extract_headers, request.headers), requestText),
+                        new Response('fetch', response.status, factory(extract_headers, response.headers), responseText)
+                        );
                     });
                 }
                 else
                 {
-                    req = new Request('fetch', 'GET', url, factory(null, {}), '');
-                    notify(req, res);
+                    notify(
+                    new Request('fetch', 'GET', request, factory(null, {}), ''),
+                    new Response('fetch', response.status, factory(extract_headers, response.headers), responseText)
+                    );
                 }
-            });
+            })/*.catch(function(err) {})*/;
         }
         return response;
   });
@@ -301,31 +304,36 @@ listenerFetch.ajaxListener = AjaxListener;
 
 function listenerOpen(method, url)
 {
-    var self = this, body = null, headers = {};
+    var self = this, body = null, headers = {}, done;
 
     self.send = function() {
         if (arguments.length) body = arguments[0];
-        xhrSend.apply(self, arguments);
+        return xhrSend.apply(self, arguments);
     };
     self.setRequestHeader = function(header, value) {
         var h = String(header).toLowerCase();
         headers[h] = HAS.call(headers, h) ? (headers[h]+', '+String(value)) : String(value);
-        xhrSetRequestHeader.apply(self, arguments);
+        return xhrSetRequestHeader.apply(self, arguments);
     };
+    done = function done(evt) {
+        self.removeEventListener('load', done);
+        self.removeEventListener('error', done);
+        self.removeEventListener('abort', done);
+        if (('load' === evt.type) && callbacks.length)
+        {
+            notify(
+            new Request('xhr', method, url, factory(null, headers), null == body ? '' : body),
+            new Response('xhr', self.status, factory(parse_headers, self.getAllResponseHeaders()), self.responseText)
+            );
+        }
+    };
+    self.addEventListener('load', done);
+    self.addEventListener('error', done);
+    self.addEventListener('abort', done);
 
     if (arguments.length < 1) method = 'GET';
     if (arguments.length < 2) url = '';
-
-    self.addEventListener('load', function onLoad() {
-        self.removeEventListener('load', onLoad);
-        if (callbacks.length)
-        {
-            var req = new Request('xhr', method, url, factory(null, headers), null == body ? '' : body),
-                res = new Response('xhr', self.status, factory(parse_headers, self.getAllResponseHeaders()), self.responseText);
-            notify(req, res);
-        }
-    });
-    xhrOpen.apply(self, arguments);
+    return xhrOpen.apply(self, arguments);
 }
 listenerOpen.ajaxListener = AjaxListener;
 
