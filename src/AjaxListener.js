@@ -213,14 +213,16 @@ Request.prototype = {
 };
 AjaxListener.Request = Request;
 
-function Response(api, status, _headersFactory, _body)
+function Response(api, status, _url, _headersFactory, _body)
 {
-    var self = this, headers = null, body = null;
+    var self = this, url = null, headers = null, body = null;
 
     self.dispose = function() {
         status = null;
+        _url = null;
         _headersFactory = null;
         _body = null;
+        url = null;
         headers = null;
         body = null;
         return self;
@@ -230,6 +232,26 @@ function Response(api, status, _headersFactory, _body)
     };
     self.getStatus = function() {
         return status;
+    };
+    self.getURL = function(raw) {
+        if (true === raw) return _url;
+        if (null == url && null != _url)
+        {
+            var u = new window.URL(_url, get_base_url());
+            url = {
+                href: u.href,
+                origin: u.origin,
+                hostname: u.hostname,
+                protocol: u.protocol,
+                host: u.host,
+                port: u.port,
+                path: u.pathname,
+                query: u.search,
+                hash: u.hash,
+                queryParams: u.search && u.search.length ? parse_url_params(u.search.slice(1)) : {}
+            };
+        }
+        return url;
     };
     self.getHeaders = function() {
         if (null == headers && null != _headersFactory)
@@ -267,6 +289,7 @@ Response.prototype = {
     ,dispose: null
     ,getAPI: null
     ,getStatus: null
+    ,getURL: null
     ,getHeaders: null
     ,getBody: null
 };
@@ -284,7 +307,7 @@ function listenerFetch(request)
                     request.text().then(function(requestText) {
                         notify(
                         new Request('fetch', request.method, request.url, factory(extract_headers, request.headers), requestText),
-                        new Response('fetch', response.status, factory(extract_headers, response.headers), responseText)
+                        new Response('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), responseText)
                         );
                     });
                 }
@@ -292,7 +315,7 @@ function listenerFetch(request)
                 {
                     notify(
                     new Request('fetch', 'GET', request, factory(null, {}), ''),
-                    new Response('fetch', response.status, factory(extract_headers, response.headers), responseText)
+                    new Response('fetch', response.status, response. url || request, factory(extract_headers, response.headers), responseText)
                     );
                 }
             })/*.catch(function(err) {})*/;
@@ -323,7 +346,7 @@ function listenerOpen(method, url)
         {
             notify(
             new Request('xhr', method, url, factory(null, headers), null == body ? '' : body),
-            new Response('xhr', self.status, factory(parse_headers, self.getAllResponseHeaders()), self.responseText)
+            new Response('xhr', self.status, self.responseURL && self.responseURL.length ? self.responseURL : url, factory(parse_headers, self.getAllResponseHeaders()), self.responseText)
             );
         }
     };
