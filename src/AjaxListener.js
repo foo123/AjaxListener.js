@@ -1,7 +1,7 @@
 /**
 *
 * AjaxListener.js: listen to any AJAX event on page, even by other scripts
-* version 1.0.0
+* version 1.0.1
 * https://github.com/foo123/AjaxListener.js
 *
 **/
@@ -12,7 +12,7 @@ if ('function' === typeof define && define.amd) define(function(req) {return roo
 }('undefined' !== typeof self ? self : this, 'AjaxListener', function() {
 "use strict";
 
-var AjaxListener = {VERSION: '1.0.0'},
+var AjaxListener = {VERSION: '1.0.1'},
     callbacks = [], installed = false,
     HAS = Object.prototype.hasOwnProperty, FtoString = Function.prototype.toString,
     NL = /[\r\n]+/,
@@ -103,6 +103,13 @@ function extract_headers(headers)
 {
     return Array.from(headers.keys()).reduce(function(o, k) {
         o[k.toLowerCase()] = headers.get(k);
+        return o;
+    }, {});
+}
+function get_headers(headers)
+{
+    return ('function' === typeof headers.keys) && ('function' === typeof headers.get) ? extract_headers(headers) : Object.keys(headers).reduce(function(o, k) {
+        o[k.toLowerCase()] = headers[k];
         return o;
     }, {});
 }
@@ -298,13 +305,23 @@ AjaxListener.Response = Response;
 
 function listenerFetch(request)
 {
-    return fetch.apply(fetch, arguments).then(function(response) {
+    var options = 1 < arguments.length ? arguments[1] : {};
+    return fetch.apply(window, arguments).then(function(response) {
         if (/*response.ok &&*/ callbacks.length)
         {
-            response.text().then(function(responseText) {
+            var getReqText, getResText = response.text.bind(response), reqText = '', resText = '';
+            response.text = function() {return Promise.resolve(resText);};
+            if (request instanceof window.Request)
+            {
+                getReqText = request.text.bind(request);
+                request.text = function() {return Promise.resolve(reqText);};
+            }
+            getResText().then(function(responseText) {
+                resText = responseText;
                 if (request instanceof window.Request)
                 {
-                    request.text().then(function(requestText) {
+                    getReqText().then(function(requestText) {
+                        reqText = requestText;
                         notify(
                         new Request('fetch', request.method, request.url, factory(extract_headers, request.headers), requestText),
                         new Response('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), responseText)
@@ -314,8 +331,8 @@ function listenerFetch(request)
                 else
                 {
                     notify(
-                    new Request('fetch', 'GET', request, factory(null, {}), ''),
-                    new Response('fetch', response.status, response. url || request, factory(extract_headers, response.headers), responseText)
+                    new Request('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
+                    new Response('fetch', response.status, response.url || request, factory(extract_headers, response.headers), responseText)
                     );
                 }
             })/*.catch(function(err) {})*/;

@@ -11,6 +11,21 @@ function requestText()
     //fd.set('foo', 'bar');
     xhr.send(/*fd*/);
 }
+function requestTextFetch()
+{
+    fetch('./text.txt', {
+        method: 'GET', // *GET, POST, PUT, DELETE, etc.
+        mode: 'cors', // no-cors, *cors, same-origin
+        cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
+        //credentials: "same-origin", // include, *same-origin, omit
+        //body: '',
+        headers: {
+          'X-My-Header': 'foo/bar'
+        }
+    })
+    .then((response) => response.text())
+    .then((responseText) => alert('LOADED TEXT: '+ responseText));
+}
 function requestJson()
 {
     var xhr = new XMLHttpRequest();
@@ -23,6 +38,6 @@ function requestJson()
 }
 setTimeout(requestText, 1000);
 setTimeout(requestJson, 2000);
-setTimeout(requestText, 3000);
+setTimeout(requestTextFetch, 3000);
 setTimeout(requestJson, 4000);
 })();
