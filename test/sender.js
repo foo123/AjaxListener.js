@@ -36,8 +36,23 @@ function requestJson()
     };
     xhr.send('foo=bar');
 }
+function requestJsonFetch()
+{
+    fetch('./json.json?loo=lam&koo[ma][koo]=zoo', {
+        method: 'POST', // *GET, POST, PUT, DELETE, etc.
+        mode: 'cors', // no-cors, *cors, same-origin
+        cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
+        //credentials: "same-origin", // include, *same-origin, omit
+        //body: '',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+    })
+    .then((response) => response.json())
+    .then((json) => alert('LOADED JSON: '+ JSON.stringify(json)));
+}
 setTimeout(requestText, 1000);
 setTimeout(requestJson, 2000);
 setTimeout(requestTextFetch, 3000);
-setTimeout(requestJson, 4000);
+setTimeout(requestJsonFetch, 4000);
 })();

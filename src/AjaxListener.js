@@ -1,7 +1,7 @@
 /**
 *
 * AjaxListener.js: listen to any AJAX event on page, even by other scripts
-* version 1.0.1
+* version 1.0.2
 * https://github.com/foo123/AjaxListener.js
 *
 **/
@@ -12,7 +12,7 @@ if ('function' === typeof define && define.amd) define(function(req) {return roo
 }('undefined' !== typeof self ? self : this, 'AjaxListener', function() {
 "use strict";
 
-var AjaxListener = {VERSION: '1.0.1'},
+var AjaxListener = {VERSION: '1.0.2'},
     callbacks = [], installed = false,
     HAS = Object.prototype.hasOwnProperty, FtoString = Function.prototype.toString,
     NL = /[\r\n]+/,
@@ -305,23 +305,42 @@ AjaxListener.Response = Response;
 
 function listenerFetch(request)
 {
-    var options = (1 < arguments.length ? arguments[1] : {}) || {};
-    return fetch.apply(window, arguments).then(function(response) {
+    var args = arguments, options = (1 < args.length ? args[1] : {}) || {};
+    return new Promise(function(resolve, reject) {
+    fetch.apply(window, args).then(function(response) {
         if (/*response.ok &&*/ callbacks.length)
         {
-            var getReqText, getResText = response.text.bind(response), reqText = '', resText = '';
+            var getReqText, getResText = response.text.bind(response),
+                reqText = '', resText = '',
+                reqJSON = undefined, resJSON = undefined,
+                errReqJSON = null, errResJSON = null;
             response.text = function() {return Promise.resolve(resText);};
+            response.json = function() {return errResJSON ? Promise.reject(errResJSON) : Promise.resolve(resJSON);};
             if (request instanceof window.Request)
             {
                 getReqText = request.text.bind(request);
                 request.text = function() {return Promise.resolve(reqText);};
+                request.json = function() {return errReqJSON ? Promise.reject(errReqJSON) : Promise.resolve(reqJSON);};
             }
             getResText().then(function(responseText) {
                 resText = responseText;
+                try {
+                    resJSON = JSON.parse(resText);
+                } catch(err) {
+                    resJSON = undefined;
+                    errResJSON = err;
+                }
                 if (request instanceof window.Request)
                 {
                     getReqText().then(function(requestText) {
                         reqText = requestText;
+                        try {
+                            reqJSON = JSON.parse(reqText);
+                        } catch(err) {
+                            reqJSON = undefined;
+                            errReqJSON = err;
+                        }
+                        resolve(response);
                         notify(
                         new Request('fetch', request.method, request.url, factory(extract_headers, request.headers), requestText),
                         new Response('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), responseText)
@@ -330,6 +349,7 @@ function listenerFetch(request)
                 }
                 else
                 {
+                    resolve(response);
                     notify(
                     new Request('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
                     new Response('fetch', response.status, response.url || request, factory(extract_headers, response.headers), responseText)
@@ -337,8 +357,14 @@ function listenerFetch(request)
                 }
             })/*.catch(function(err) {})*/;
         }
-        return response;
-  });
+        else
+        {
+            resolve(response);
+        }
+    }).catch(function(err) {
+        reject(err);
+    });
+    });
 }
 listenerFetch.ajaxListener = AjaxListener;
 
