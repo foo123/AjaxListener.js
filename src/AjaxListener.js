@@ -305,7 +305,7 @@ AjaxListener.Response = Response;
 
 function listenerFetch(request)
 {
-    var options = 1 < arguments.length ? arguments[1] : {};
+    var options = (1 < arguments.length ? arguments[1] : {}) || {};
     return fetch.apply(window, arguments).then(function(response) {
         if (/*response.ok &&*/ callbacks.length)
         {
