@@ -2,7 +2,7 @@
 
 Listen to any AJAX event on page with JavaScript, even by other scripts
 
-Version: **1.0.1** (6 kB minified)
+Version: **1.0.2** (6 kB minified)
 
 ![AJAX Listener](/ajaxlistener.jpg)
 
