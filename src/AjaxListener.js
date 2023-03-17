@@ -1,7 +1,7 @@
 /**
 *
 * AjaxListener.js: listen to any AJAX event on page, even by other scripts
-* version 1.0.2
+* version 1.1.0
 * https://github.com/foo123/AjaxListener.js
 *
 **/
@@ -9,12 +9,14 @@
 "use strict";
 root[name] = factory();
 if ('function' === typeof define && define.amd) define(function(req) {return root[name];});
-}('undefined' !== typeof self ? self : this, 'AjaxListener', function() {
+}('undefined' !== typeof self ? self : this, 'AjaxListener', function(undef) {
 "use strict";
 
-var AjaxListener = {VERSION: '1.0.2'},
+var AjaxListener = {VERSION: '1.1.0'},
     callbacks = [], installed = false,
-    HAS = Object.prototype.hasOwnProperty, FtoString = Function.prototype.toString,
+    HAS = Object.prototype.hasOwnProperty,
+    toString = Object.prototype.toString,
+    FtoString = Function.prototype.toString,
     NL = /[\r\n]+/,
     NESTED = /^[^\[\]\.]+(\[[^\[\]\.]+\])+(\[\])?$/,
     BRAKET = /\[([^\[\]]+)\]/g,
@@ -26,7 +28,11 @@ var AjaxListener = {VERSION: '1.0.2'},
 
 function get_base_url()
 {
-    return window.location.origin + window.location.pathname/*.split('/').slice(0, -1).join('/')*/;
+    return window.location.origin + window.location.pathname;
+}
+function is_string(x)
+{
+    return '[object String]' === toString.call(x);
 }
 function is_native_function(f)
 {
@@ -165,12 +171,6 @@ function Request(api, method, _url, _headersFactory, _body)
                 hash: u.hash,
                 queryParams: u.search && u.search.length ? parse_url_params(u.search.slice(1)) : {}
             };
-            /*
-            // NOT ADDED AS QUERY PARAMS!!
-            if (('GET' === self.getMethod()) && is_formdata(self.getBody(true)))
-            {
-                url.queryParams = extract_form_data(self.getBody(true), url.queryParams);
-            }*/
         }
         return url;
     };
@@ -187,19 +187,26 @@ function Request(api, method, _url, _headersFactory, _body)
         {
             if (is_formdata(_body))
             {
-                return body = extract_form_data(_body);
+                body = extract_form_data(_body);
             }
-            var contentType = String(self.getHeaders()['content-type'] || '');
-            if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
+            else if (is_string(_body))
             {
-                body = parse_url_params(_body);
-            }
-            else if (
-                -1 !== contentType.indexOf('application/json')
-                || -1 !== contentType.indexOf('application/vnd.api+json')
-            )
-            {
-                body = parse_json(_body);
+                var contentType = String(self.getHeaders()['content-type'] || '');
+                if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
+                {
+                    body = parse_url_params(_body);
+                }
+                else if (
+                    -1 !== contentType.indexOf('application/json')
+                    || -1 !== contentType.indexOf('application/vnd.api+json')
+                )
+                {
+                    body = parse_json(_body);
+                }
+                else
+                {
+                    body = _body;
+                }
             }
             else
             {
@@ -271,17 +278,24 @@ function Response(api, status, _url, _headersFactory, _body)
         if (true === raw) return _body;
         if (null == body && null != _body)
         {
-            var contentType = String(self.getHeaders()['content-type'] || '');
-            if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
+            if (is_string(_body))
             {
-                body = parse_url_params(_body);
-            }
-            else if (
-                -1 !== contentType.indexOf('application/json')
-                || -1 !== contentType.indexOf('application/vnd.api+json')
-            )
-            {
-                body = parse_json(_body);
+                var contentType = String(self.getHeaders()['content-type'] || '');
+                if (-1 !== contentType.indexOf('application/x-www-form-urlencoded'))
+                {
+                    body = parse_url_params(_body);
+                }
+                else if (
+                    -1 !== contentType.indexOf('application/json')
+                    || -1 !== contentType.indexOf('application/vnd.api+json')
+                )
+                {
+                    body = parse_json(_body);
+                }
+                else
+                {
+                    body = _body;
+                }
             }
             else
             {
@@ -307,63 +321,20 @@ function listenerFetch(request)
 {
     var args = arguments, options = (1 < args.length ? args[1] : {}) || {};
     return new Promise(function(resolve, reject) {
-    fetch.apply(window, args).then(function(response) {
-        if (/*response.ok &&*/ callbacks.length)
-        {
-            var getReqText, getResText = response.text.bind(response),
-                reqText = '', resText = '',
-                reqJSON = undefined, resJSON = undefined,
-                errReqJSON = null, errResJSON = null;
-            response.text = function() {return Promise.resolve(resText);};
-            response.json = function() {return errResJSON ? Promise.reject(errResJSON) : Promise.resolve(resJSON);};
-            if (request instanceof window.Request)
-            {
-                getReqText = request.text.bind(request);
-                request.text = function() {return Promise.resolve(reqText);};
-                request.json = function() {return errReqJSON ? Promise.reject(errReqJSON) : Promise.resolve(reqJSON);};
-            }
-            getResText().then(function(responseText) {
-                resText = responseText;
-                try {
-                    resJSON = JSON.parse(resText);
-                } catch(err) {
-                    resJSON = undefined;
-                    errResJSON = err;
-                }
-                if (request instanceof window.Request)
-                {
-                    getReqText().then(function(requestText) {
-                        reqText = requestText;
-                        try {
-                            reqJSON = JSON.parse(reqText);
-                        } catch(err) {
-                            reqJSON = undefined;
-                            errReqJSON = err;
-                        }
-                        resolve(response);
-                        notify(
-                        new Request('fetch', request.method, request.url, factory(extract_headers, request.headers), requestText),
-                        new Response('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), responseText)
-                        );
-                    });
-                }
-                else
-                {
-                    resolve(response);
-                    notify(
-                    new Request('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
-                    new Response('fetch', response.status, response.url || request, factory(extract_headers, response.headers), responseText)
-                    );
-                }
-            })/*.catch(function(err) {})*/;
-        }
-        else
-        {
+        fetch.apply(window, args).then(function(response) {
             resolve(response);
-        }
-    }).catch(function(err) {
-        reject(err);
-    });
+            if (callbacks.length)
+            {
+                notify(
+                request instanceof window.Request
+                ? new Request('fetch', request.method, request.url, factory(extract_headers, request.headers), request.body)
+                : new Request('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
+                new Response('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), response.body)
+                );
+            }
+        }).catch(function(err) {
+            reject(err);
+        });
     });
 }
 listenerFetch.ajaxListener = AjaxListener;
