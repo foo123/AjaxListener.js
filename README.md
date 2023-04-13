@@ -2,7 +2,7 @@
 
 Listen to any AJAX event on page with JavaScript, even by other scripts
 
-Version: **1.1.0** (6 kB minified)
+Version: **1.2.0** (7 kB minified)
 
 ![AJAX Listener](/ajaxlistener.jpg)
 
@@ -19,6 +19,8 @@ function mylistener(req, res)
 AjaxListener.install().onRequest(mylistener);
 
 //AjaxListener.onRequest(mylistener, false); // unlisten
+
+//AjaxListener.isInstalled(); // true|false
 
 //AjaxListener.uninstall(); // uninstall
 ```
@@ -43,7 +45,7 @@ AjaxListener.install().onRequest(mylistener);
 * [Imagik](https://github.com/foo123/Imagik) fully-featured, fully-customisable and extendable Responsive CSS3 Slideshow
 * [Carousel3](https://github.com/foo123/Carousel3) HTML5 Photo Carousel using Three.js
 * [Rubik3](https://github.com/foo123/Rubik3) intuitive 3D Rubik Cube with Three.js
-* [MOD3](https://github.com/foo123/MOD3) JavaScript port of AS3DMod ActionScript 3D Modifier Library
+* [MOD3](https://github.com/foo123/MOD3) 3D Modifier Library for JavaScript
 * [Geometrize](https://github.com/foo123/Geometrize) Computational Geometry and Rendering Library for JavaScript
 * [RT](https://github.com/foo123/RT) unified client-side real-time communication for JavaScript using XHR polling / BOSH / WebSockets / WebRTC
 * [AjaxListener.js](https://github.com/foo123/AjaxListener.js): Listen to any AJAX event on page with JavaScript, even by other scripts

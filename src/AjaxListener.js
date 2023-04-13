@@ -1,7 +1,7 @@
 /**
 *
 * AjaxListener.js: listen to any AJAX event on page, even by other scripts
-* version 1.1.0
+* version 1.2.0
 * https://github.com/foo123/AjaxListener.js
 *
 **/
@@ -12,7 +12,7 @@ if ('function' === typeof define && define.amd) define(function(req) {return roo
 }('undefined' !== typeof self ? self : this, 'AjaxListener', function(undef) {
 "use strict";
 
-var AjaxListener = {VERSION: '1.1.0'},
+var AjaxListener = {VERSION: '1.2.0'},
     callbacks = [], installed = false,
     HAS = Object.prototype.hasOwnProperty,
     toString = Object.prototype.toString,
@@ -23,6 +23,7 @@ var AjaxListener = {VERSION: '1.1.0'},
     NATIVE_CODE = /^\s*function\s*[A-Za-z0-9_$]+\s*\([^\(\)]*\)\s*\{\s*\[native code\]\s*\}\s*$/i,
     fetch = window.fetch,
     xhr = window.XMLHttpRequest,
+	nRequest = window.Request,
     xhrOpen, xhrSend, xhrSetRequestHeader
 ;
 
@@ -133,7 +134,7 @@ function notify(req, res)
     }, 0);
 }
 
-function Request(api, method, _url, _headersFactory, _body)
+function alRequest(api, method, _url, _headersFactory, _body)
 {
     var self = this, url = null, headers = null, body = null;
     method = String(method).toUpperCase();
@@ -216,8 +217,8 @@ function Request(api, method, _url, _headersFactory, _body)
         return body;
     };
 }
-Request.prototype = {
-    constructor: Request
+alRequest.prototype = {
+    constructor: alRequest
     ,dispose: null
     ,getAPI: null
     ,getMethod: null
@@ -225,9 +226,9 @@ Request.prototype = {
     ,getHeaders: null
     ,getBody: null
 };
-AjaxListener.Request = Request;
+AjaxListener.Request = alRequest;
 
-function Response(api, status, _url, _headersFactory, _body)
+function alResponse(api, status, _url, _headersFactory, _body)
 {
     var self = this, url = null, headers = null, body = null;
 
@@ -305,8 +306,8 @@ function Response(api, status, _url, _headersFactory, _body)
         return body;
     };
 }
-Response.prototype = {
-    constructor: Response
+alResponse.prototype = {
+    constructor: alResponse
     ,dispose: null
     ,getAPI: null
     ,getStatus: null
@@ -314,24 +315,122 @@ Response.prototype = {
     ,getHeaders: null
     ,getBody: null
 };
-AjaxListener.Response = Response;
+AjaxListener.Response = alResponse;
 
 
+function Request(input, options)
+{
+	var r = new nRequest(input, options), body = options ? options.body : '';
+	r.getOriginalBody = function() {return body;};
+	/*return new Proxy(r, {
+		get(target, prop, receiver) {
+			if ("bodyOrig" === prop) return body;
+			return Reflect.get(Array.prototype.slice.call(arguments));
+		}
+	});*/
+	return r;
+}
 function listenerFetch(request)
 {
     var args = arguments, options = (1 < args.length ? args[1] : {}) || {};
     return new Promise(function(resolve, reject) {
         fetch.apply(window, args).then(function(response) {
-            resolve(response);
             if (callbacks.length)
             {
-                notify(
-                request instanceof window.Request
-                ? new Request('fetch', request.method, request.url, factory(extract_headers, request.headers), request.body)
-                : new Request('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
-                new Response('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), response.body)
-                );
+				var arrayBuffer = response.arrayBuffer,
+					blob = response.blob,
+					formData = response.formData,
+					json = response.json,
+					text = response.text,
+					body = response.body,
+					timer = null,
+					n = function n() {
+						clearTimeout(timer);
+						notify(
+						request instanceof nRequest
+						? new alRequest('fetch', request.method, request.url, factory(extract_headers, request.headers), request.getOriginalBody ? request.getOriginalBody() : request.body)
+						: new alRequest('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
+						new alResponse('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), body)
+						);
+					}
+				;
+				timer = setTimeout(n, 500);
+				response.arrayBuffer = function() {
+					return new Promise(function(res, rej) {
+						arrayBuffer.call(response)
+						.then(function(b) {
+							body = b;
+							setTimeout(n, 0);
+							res(b);
+						})
+						.catch(function(err) {
+							setTimeout(n, 0);
+							rej(err);
+						});
+					});
+				};
+				response.blob = function() {
+					return new Promise(function(res, rej) {
+						blob.call(response)
+						.then(function(b) {
+							body = b;
+							setTimeout(n, 0);
+							res(b);
+						})
+						.catch(function(err) {
+							setTimeout(n, 0);
+							rej(err);
+						});
+					});
+				};
+				response.formData = function() {
+					return new Promise(function(res, rej) {
+						formData.call(response)
+						.then(function(b) {
+							body = b;
+							setTimeout(n, 0);
+							res(b);
+						})
+						.catch(function(err) {
+							setTimeout(n, 0);
+							rej(err);
+						});
+					});
+				};
+				response.json = function() {
+					return new Promise(function(res, rej) {
+						json.call(response)
+						.then(function(b) {
+							body = b;
+							setTimeout(n, 0);
+							res(b);
+						})
+						.catch(function(err) {
+							setTimeout(n, 0);
+							rej(err);
+						});
+					});
+				};
+				response.text = function() {
+					return new Promise(function(res, rej) {
+						text.call(response)
+						.then(function(b) {
+							body = b;
+							setTimeout(n, 0);
+							res(b);
+						})
+						.catch(function(err) {
+							setTimeout(n, 0);
+							rej(err);
+						});
+					});
+				};
+				resolve(response);
             }
+			else
+			{
+				resolve(response);
+			}
         }).catch(function(err) {
             reject(err);
         });
@@ -359,8 +458,8 @@ function listenerOpen(method, url)
         if (('load' === evt.type) && callbacks.length)
         {
             notify(
-            new Request('xhr', method, url, factory(null, headers), null == body ? '' : body),
-            new Response('xhr', self.status, self.responseURL && self.responseURL.length ? self.responseURL : url, factory(parse_headers, self.getAllResponseHeaders()), self.responseText)
+            new alRequest('xhr', method, url, factory(null, headers), null == body ? '' : body),
+            new alResponse('xhr', self.status, self.responseURL && self.responseURL.length ? self.responseURL : url, factory(parse_headers, self.getAllResponseHeaders()), self.responseText)
             );
         }
     };
@@ -383,10 +482,12 @@ AjaxListener.install = function() {
             {
                 fetch.ajaxListener.uninstall();
                 fetch = window.fetch;
+				nRequest = window.Request;
             }
             if (is_native_function(fetch))
             {
                 window.fetch = listenerFetch;
+				if (is_native_function(nRequest)) window.Request = Request;
                 installed = true;
             }
         }
@@ -416,8 +517,15 @@ AjaxListener.isInstalled = function() {
 AjaxListener.uninstall = function() {
     if (installed)
     {
-        if (is_native_function(fetch)) window.fetch = fetch;
-        if (is_native_function(xhrOpen)) xhr.prototype.open = xhrOpen;
+        if (is_native_function(fetch))
+		{
+			window.fetch = fetch;
+			window.Request = nRequest;
+		}
+        if (is_native_function(xhrOpen))
+		{
+			xhr.prototype.open = xhrOpen;
+		}
         xhrOpen = null;
         xhrSend = null;
         xhrSetRequestHeader = null;
