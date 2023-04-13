@@ -23,7 +23,7 @@ var AjaxListener = {VERSION: '1.2.0'},
     NATIVE_CODE = /^\s*function\s*[A-Za-z0-9_$]+\s*\([^\(\)]*\)\s*\{\s*\[native code\]\s*\}\s*$/i,
     fetch = window.fetch,
     xhr = window.XMLHttpRequest,
-	nRequest = window.Request,
+    nRequest = window.Request,
     xhrOpen, xhrSend, xhrSetRequestHeader
 ;
 
@@ -320,15 +320,15 @@ AjaxListener.Response = alResponse;
 
 function Request(input, options)
 {
-	var r = new nRequest(input, options), body = options ? options.body : '';
-	r.getOriginalBody = function() {return body;};
-	/*return new Proxy(r, {
-		get(target, prop, receiver) {
-			if ("bodyOrig" === prop) return body;
-			return Reflect.get(Array.prototype.slice.call(arguments));
-		}
-	});*/
-	return r;
+    var r = new nRequest(input, options), body = options ? options.body : '';
+    r.getOriginalBody = function() {return body;};
+    /*return new Proxy(r, {
+        get(target, prop, receiver) {
+            if ("bodyOrig" === prop) return body;
+            return Reflect.get(Array.prototype.slice.call(arguments));
+        }
+    });*/
+    return r;
 }
 function listenerFetch(request)
 {
@@ -337,103 +337,101 @@ function listenerFetch(request)
         fetch.apply(window, args).then(function(response) {
             if (callbacks.length)
             {
-				var arrayBuffer = response.arrayBuffer,
-					blob = response.blob,
-					formData = response.formData,
-					json = response.json,
-					text = response.text,
-					body = response.body,
-					timer = null,
-					notified = false,
-					n = function n() {
-						clearTimeout(timer);
-						if (notified) return;
-						notified = true;
-						notify(
-						request instanceof nRequest
-						? new alRequest('fetch', request.method, request.url, factory(extract_headers, request.headers), request.getOriginalBody ? request.getOriginalBody() : request.body)
-						: new alRequest('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
-						new alResponse('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), body)
-						);
-					}
-				;
-				timer = setTimeout(n, 500);
-				response.arrayBuffer = function() {
-					return new Promise(function(res, rej) {
-						arrayBuffer.call(response)
-						.then(function(b) {
-							body = b;
-							setTimeout(n, 0);
-							res(b);
-						})
-						.catch(function(err) {
-							setTimeout(n, 0);
-							rej(err);
-						});
-					});
-				};
-				response.blob = function() {
-					return new Promise(function(res, rej) {
-						blob.call(response)
-						.then(function(b) {
-							body = b;
-							setTimeout(n, 0);
-							res(b);
-						})
-						.catch(function(err) {
-							setTimeout(n, 0);
-							rej(err);
-						});
-					});
-				};
-				response.formData = function() {
-					return new Promise(function(res, rej) {
-						formData.call(response)
-						.then(function(b) {
-							body = b;
-							setTimeout(n, 0);
-							res(b);
-						})
-						.catch(function(err) {
-							setTimeout(n, 0);
-							rej(err);
-						});
-					});
-				};
-				response.json = function() {
-					return new Promise(function(res, rej) {
-						json.call(response)
-						.then(function(b) {
-							body = b;
-							setTimeout(n, 0);
-							res(b);
-						})
-						.catch(function(err) {
-							setTimeout(n, 0);
-							rej(err);
-						});
-					});
-				};
-				response.text = function() {
-					return new Promise(function(res, rej) {
-						text.call(response)
-						.then(function(b) {
-							body = b;
-							setTimeout(n, 0);
-							res(b);
-						})
-						.catch(function(err) {
-							setTimeout(n, 0);
-							rej(err);
-						});
-					});
-				};
-				resolve(response);
+                var arrayBuffer = response.arrayBuffer,
+                    blob = response.blob,
+                    formData = response.formData,
+                    json = response.json,
+                    text = response.text,
+                    body = response.body,
+                    timer = null,
+                    notified = false,
+                    n = function n() {
+                        clearTimeout(timer);
+                        if (notified) return;
+                        notified = true;
+                        setTimeout(function() {
+                        notify(
+                        request instanceof nRequest
+                        ? new alRequest('fetch', request.method, request.url, factory(extract_headers, request.headers), request.getOriginalBody ? request.getOriginalBody() : request.body)
+                        : new alRequest('fetch', options.method || 'GET', request, factory(get_headers, options.headers || {}), options.body || ''),
+                        new alResponse('fetch', response.status, response.url || request.url, factory(extract_headers, response.headers), body)
+                        );
+                        }, 0);
+                    }
+                ;
+                timer = setTimeout(n, 500);
+                response.arrayBuffer = function() {
+                    return new Promise(function(res, rej) {
+                        arrayBuffer.call(response)
+                        .then(function(b) {
+                            body = b;
+                            n();
+                            res(b);
+                        })
+                        .catch(function(err) {
+                            n();
+                            rej(err);
+                        });
+                    });
+                };
+                response.blob = function() {
+                    return new Promise(function(res, rej) {
+                        blob.call(response)
+                        .then(function(b) {
+                            body = b;
+                            n();
+                            res(b);
+                        })
+                        .catch(function(err) {
+                            n();
+                            rej(err);
+                        });
+                    });
+                };
+                response.formData = function() {
+                    return new Promise(function(res, rej) {
+                        formData.call(response)
+                        .then(function(b) {
+                            body = b;
+                            n();
+                            res(b);
+                        })
+                        .catch(function(err) {
+                            n();
+                            rej(err);
+                        });
+                    });
+                };
+                response.json = function() {
+                    return new Promise(function(res, rej) {
+                        json.call(response)
+                        .then(function(b) {
+                            body = b;
+                            n();
+                            res(b);
+                        })
+                        .catch(function(err) {
+                            n();
+                            rej(err);
+                        });
+                    });
+                };
+                response.text = function() {
+                    return new Promise(function(res, rej) {
+                        text.call(response)
+                        .then(function(b) {
+                            body = b;
+                            n();
+                            res(b);
+                        })
+                        .catch(function(err) {
+                            n();
+                            rej(err);
+                        });
+                    });
+                };
             }
-			else
-			{
-				resolve(response);
-			}
+            resolve(response);
         }).catch(function(err) {
             reject(err);
         });
@@ -485,12 +483,12 @@ AjaxListener.install = function() {
             {
                 fetch.ajaxListener.uninstall();
                 fetch = window.fetch;
-				nRequest = window.Request;
+                nRequest = window.Request;
             }
             if (is_native_function(fetch))
             {
                 window.fetch = listenerFetch;
-				if (is_native_function(nRequest)) window.Request = Request;
+                if (is_native_function(nRequest)) window.Request = Request;
                 installed = true;
             }
         }
@@ -521,14 +519,14 @@ AjaxListener.uninstall = function() {
     if (installed)
     {
         if (is_native_function(fetch))
-		{
-			window.fetch = fetch;
-			window.Request = nRequest;
-		}
+        {
+            window.fetch = fetch;
+            window.Request = nRequest;
+        }
         if (is_native_function(xhrOpen))
-		{
-			xhr.prototype.open = xhrOpen;
-		}
+        {
+            xhr.prototype.open = xhrOpen;
+        }
         xhrOpen = null;
         xhrSend = null;
         xhrSetRequestHeader = null;
