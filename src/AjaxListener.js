@@ -344,8 +344,11 @@ function listenerFetch(request)
 					text = response.text,
 					body = response.body,
 					timer = null,
+					notified = false,
 					n = function n() {
 						clearTimeout(timer);
+						if (notified) return;
+						notified = true;
 						notify(
 						request instanceof nRequest
 						? new alRequest('fetch', request.method, request.url, factory(extract_headers, request.headers), request.getOriginalBody ? request.getOriginalBody() : request.body)
